@@ -40,7 +40,7 @@ export function uploadBuffer(
         });
       }
     );
-    stream.end(buffer);
+    (stream as any).end(buffer);
   });
 }
 

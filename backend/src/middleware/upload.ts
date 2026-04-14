@@ -1,24 +1,7 @@
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config';
 
-// Ensure upload directory exists
-if (!fs.existsSync(config.upload.dir)) {
-  fs.mkdirSync(config.upload.dir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, config.upload.dir);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const uniqueName = `${uuidv4()}${ext}`;
-    cb(null, uniqueName);
-  },
-});
+const storage = multer.memoryStorage();
 
 const allowedMimeTypes = [
   'application/pdf',

@@ -1,26 +1,30 @@
 import { Request, Response } from 'express';
-import fs from 'fs';
-import path from 'path';
 import { DocumentModel } from '../models/Document';
 import { Chunk } from '../models/Chunk';
 import { documentQueue } from '../workers/documentProcessor';
 import { asyncHandler, createError } from '../middleware/errorHandler';
-import { config } from '../config';
+import { uploadBuffer, deleteFile } from '../services/storage/cloudinary';
 
 export const uploadDocument = asyncHandler(async (req: Request, res: Response) => {
   if (!req.file) throw createError('No file uploaded', 400);
 
   const userId = req.user!._id.toString();
-  const { originalname, mimetype, size, filename } = req.file;
-  const filePath = path.join(config.upload.dir, filename);
+  const { originalname, mimetype, size, buffer } = req.file;
+
+  // Upload file to Cloudinary
+  const uploaded = await uploadBuffer(buffer, {
+    folder: `docint/${userId}`,
+    filename: originalname,
+  });
 
   // Persist document record
   const doc = await DocumentModel.create({
     userId,
-    filename,
     originalName: originalname,
     mimeType: mimetype,
     size,
+    cloudinaryUrl: uploaded.url,
+    cloudinaryPublicId: uploaded.publicId,
     status: 'pending',
   });
 
@@ -28,7 +32,7 @@ export const uploadDocument = asyncHandler(async (req: Request, res: Response) =
   documentQueue.enqueue({
     documentId: doc._id.toString(),
     userId,
-    filePath,
+    fileUrl: uploaded.url,
     mimeType: mimetype,
     originalName: originalname,
   });
@@ -75,10 +79,9 @@ export const deleteDocument = asyncHandler(async (req: Request, res: Response) =
   const doc = await DocumentModel.findOne({ _id: id, userId });
   if (!doc) throw createError('Document not found', 404);
 
-  // Delete physical file
-  const filePath = path.join(config.upload.dir, doc.filename);
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
+  // Delete file from Cloudinary (if still there)
+  if (doc.cloudinaryPublicId) {
+    await deleteFile(doc.cloudinaryPublicId);
   }
 
   // Delete all associated chunks

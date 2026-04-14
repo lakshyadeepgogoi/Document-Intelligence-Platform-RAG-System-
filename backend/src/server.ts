@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import path from 'path';
 
 import { config } from './config';
 import { connectDB } from './config/database';
@@ -26,9 +25,6 @@ app.use(morgan(config.nodeEnv === 'production' ? 'combined' : 'dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ── Static file serving (for local dev) ─────────────────────────────────────
-app.use('/uploads', express.static(path.resolve(config.upload.dir)));
-
 // ── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -47,18 +43,29 @@ app.use((_req, res) => {
 // ── Global Error Handler ──────────────────────────────────────────────────────
 app.use(errorHandler);
 
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
-const start = async () => {
-  await connectDB();
-  app.listen(config.port, () => {
-    console.log(`🚀 Server running on http://localhost:${config.port}`);
-    console.log(`🌍 Environment: ${config.nodeEnv}`);
-  });
-};
+// ── Connect to DB (cached for serverless) ────────────────────────────────────
+let dbConnected = false;
+export async function ensureDB() {
+  if (!dbConnected) {
+    await connectDB();
+    dbConnected = true;
+  }
+}
 
-start().catch((err) => {
-  console.error('❌ Failed to start server:', err);
-  process.exit(1);
-});
+// ── Local dev: listen on port ────────────────────────────────────────────────
+if (!process.env.VERCEL) {
+  const start = async () => {
+    await ensureDB();
+    app.listen(config.port, () => {
+      console.log(`🚀 Server running on http://localhost:${config.port}`);
+      console.log(`🌍 Environment: ${config.nodeEnv}`);
+    });
+  };
+
+  start().catch((err) => {
+    console.error('❌ Failed to start server:', err);
+    process.exit(1);
+  });
+}
 
 export default app;
